@@ -78,7 +78,3 @@ mvn test
 | MessageHandler | 处理普通弹幕消息 |
 | GiftHandler | 处理礼物赠送消息 |
 | ScHandler | 处理醒目留言消息 |
-
-## License
-
-MIT License
