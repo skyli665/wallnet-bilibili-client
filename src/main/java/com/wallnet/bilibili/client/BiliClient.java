@@ -38,9 +38,9 @@ import static com.wallnet.bilibili.common.BiliConst.USER_AGENT;
  */
 @Slf4j
 public class BiliClient {
-    
+
     private static final String[] EXCLUDE_FIELDS = {"Domain", "Path", "Expires", "HttpOnly"};
-    
+
     /**
      * 获取登录二维码<br>
      * 对于url参数,需要手动生成一个qrcode,供手机扫码登录
@@ -48,9 +48,14 @@ public class BiliClient {
      * @return {@link com.wallnet.bilibili.response.QrCode} Qrcode
      */
     public static QrCode getQrCode() {
-        return doGet(BiliConst.Login.GENERATE_QR_CODE, null, null, QrCode.class);
+        QrCode qrCode = doGet(BiliConst.Login.GENERATE_QR_CODE, null, null, QrCode.class);
+        if (StrUtil.isBlank(qrCode.getQrcodeKey())) {
+            String qrcodeKey = HttpUtil.decodeParamMap(qrCode.getUrl(), StandardCharsets.UTF_8).get("qrcode_key");
+            qrCode.setQrcodeKey(qrcodeKey);
+        }
+        return qrCode;
     }
-    
+
     /**
      * 获取登录状态
      *
@@ -69,7 +74,7 @@ public class BiliClient {
         }
         return loginResponse;
     }
-    
+
     /**
      * 获取用户信息
      *
@@ -81,7 +86,7 @@ public class BiliClient {
         header.put("cookie", cookie);
         return doGet(BiliConst.Service.GET_USER_INFO, header, null, BiUserInfo.class);
     }
-    
+
     /**
      * 刷新token
      *
@@ -92,7 +97,7 @@ public class BiliClient {
     public static LoginStatus getRefreshToken(String cookie, String refreshToken) {
         String correspondPath = getCorrespondPath(java.lang.String.format("refresh_%d", System.currentTimeMillis())
                 , BiliConst.RSA.PUBLIC_KEY);
-        
+
         // 获取到的是html
         HttpResponse response = HttpRequest.get(BiliConst.Login.GET_TOKEN_HTML + correspondPath)
                 .addHeaders(getDefaultHeader())
@@ -117,11 +122,18 @@ public class BiliClient {
             params.put("refresh_token", refreshToken);
             Map<String, String> header = new HashMap<>(1);
             header.put("cookie", cookie);
-            return doPostForm(BiliConst.Login.REFRESH_TOKEN, header, params, LoginStatus.class);
+            BiliResult result = doPostForm(BiliConst.Login.REFRESH_TOKEN, header, params, BiliResult.class);
+            LoginStatus loginResponse = (LoginStatus) result.getData(LoginStatus.class);
+            if (result.isSuccess()) {
+                List<String> newCookie = result.getCookie();
+                String join = java.lang.String.join(";", newCookie);
+                loginResponse.setCookies(join);
+            }
+            return loginResponse;
         }
         return null;
     }
-    
+
     /**
      * 获取动态赞或转发列表
      *
@@ -138,7 +150,7 @@ public class BiliClient {
         params.put("web_location", "");
         return doGet(BiliConst.Service.REACTION_DETAIL, header, HttpUtil.toParams(params), Reaction.class);
     }
-    
+
     /**
      * 发送私信
      *
@@ -175,7 +187,7 @@ public class BiliClient {
         BiliResult biliResult = doPostForm(BiliConst.Service.SEND_PRIVATE_MESSAGE, header, data, BiliResult.class);
         return biliResult.isSuccess();
     }
-    
+
     /**
      * 获取用户房间信息
      *
@@ -187,8 +199,8 @@ public class BiliClient {
         params.put("mid", uid);
         return doGet(BiliConst.Service.FIND_USER_ROOM, null, HttpUtil.toParams(params), Room.class);
     }
-    
-    
+
+
     /**
      * 获取用户当月舰长
      *
@@ -209,7 +221,7 @@ public class BiliClient {
         params.put("platform", "web");
         return doGet(BiliConst.Service.GET_MONTH_VIP, header, HttpUtil.toParams(params), Room.class);
     }
-    
+
     public static Sailors getSailors(String cookie, int page) {
         log.info("===>获取用户舰长");
         Map<String, String> header = new HashMap<>(1);
@@ -218,7 +230,7 @@ public class BiliClient {
         params.put("page", page);
         return doGet(BiliConst.Service.GET_USER_SHIP, header, HttpUtil.toParams(params), Sailors.class);
     }
-    
+
     /**
      * 获取房间初始化信息
      *
@@ -230,7 +242,7 @@ public class BiliClient {
         params.put("id", roomId);
         return doGet(BiliConst.Service.GET_ROOM_INIT_INFO, null, HttpUtil.toParams(params), RoomInitInfo.class);
     }
-    
+
     /**
      * 获取房间信息
      *
@@ -245,7 +257,7 @@ public class BiliClient {
         header.put("Referer", "https://live.bilibili.com/" + (roomTitle != null ? roomTitle : ""));
         return doGet(BiliConst.Service.GET_ROOM_INFO, header, HttpUtil.toParams(params), RoomInfo.class);
     }
-    
+
     /**
      * 获取主播信息
      *
@@ -260,7 +272,7 @@ public class BiliClient {
         params.put("uid", uid);
         return doGet(BiliConst.Service.GET_LIVE_USER_INFO, header, HttpUtil.toParams(params), LiveUserInfo.class);
     }
-    
+
     /**
      * 获取直播流信息
      *
@@ -280,7 +292,7 @@ public class BiliClient {
         params.put("room_id", roomId);
         return doGet(BiliConst.Service.GET_LIVE_STREAM_INFO, header, HttpUtil.toParams(params), RoomInitInfo.class);
     }
-    
+
     /**
      * 获取弹幕服务器url
      *
@@ -300,7 +312,7 @@ public class BiliClient {
         Map<String, Object> wbiSignature = generateWbiSignature(params);
         return doGet(BiliConst.Service.GET_DANMU_SERVER_URL, header, HttpUtil.toParams(wbiSignature), LiveDanmuInfo.class);
     }
-    
+
     /**
      * 获取wbi信息
      *
@@ -311,35 +323,33 @@ public class BiliClient {
         Map<String, String> header = getDefaultHeader();
         return doGet(BiliConst.Service.GET_WBI_INFO, header, null, BiliWbiInfo.class);
     }
-    
+
     @SneakyThrows
     private static <T> T doPostBody(String url, Map<String, String> headers, String body, Class<T> clazz) {
         Map<String, String> header = getDefaultHeader();
         if (CollectionUtil.isNotEmpty(headers)) {
             header.putAll(headers);
         }
-        String response = HttpRequest.post(url)
+        HttpResponse response = HttpRequest.post(url)
                 .addHeaders(header)
                 .body(body)
-                .execute()
-                .body();
-        return (T) doReturn(url, body, clazz, response);
+                .execute();
+        return doReturn(url, body, clazz, response);
     }
-    
+
     @SneakyThrows
     private static <T> T doPostForm(String url, Map<String, String> headers, Map<String, Object> params, Class<T> clazz) {
         Map<String, String> header = getDefaultHeader();
         if (CollectionUtil.isNotEmpty(headers)) {
             header.putAll(headers);
         }
-        String response = HttpRequest.post(url)
+        HttpResponse response = HttpRequest.post(url)
                 .addHeaders(header)
                 .form(params)
-                .execute()
-                .body();
-        return (T) doReturn(url, params, clazz, response);
+                .execute();
+        return doReturn(url, params, clazz, response);
     }
-    
+
     @SneakyThrows
     private static <T> T doGet(String url, Map<String, String> headers, String params, Class<T> clazz) {
         Map<String, String> header = getDefaultHeader();
@@ -351,6 +361,30 @@ public class BiliClient {
             finalUrl += "?" + params;
         }
         HttpResponse response = HttpRequest.get(finalUrl).addHeaders(headers).execute();
+        return doReturn(url, params, clazz, response);
+    }
+
+    private static Map<String, String> getDefaultHeader() {
+        Map<String, String> header = new HashMap<>(6);
+        header.put("User-Agent", USER_AGENT);
+        header.put("Accept", "*/*");
+        header.put("Referer", "https://www.bilibili.com/");
+        header.put("Connection", "keep-alive");
+        return header;
+    }
+
+    private static List<String> getCookies(List<HttpCookie> httpCookies) {
+        if (CollectionUtil.isNotEmpty(httpCookies)) {
+            return httpCookies.stream()
+                    .filter(cookie -> !ArrayUtil.contains(EXCLUDE_FIELDS, cookie.getName()))
+                    .map(cookie -> cookie.getName() + "=" + cookie.getValue())
+                    .collect(Collectors.toList());
+        }
+        return Collections.emptyList();
+    }
+
+    @SneakyThrows
+    private static <T> T doReturn(String url, Object params, Class<T> clazz, HttpResponse response) {
         String body = response.body();
         List<String> httpCookies = getCookies(response.getCookies());
         log.debug("\r\n===>bili client start\r\n>请求接口: {}\r\n>参数: {}\r\n>cookies:{}\r\n>返回结果: {}\r\n====end====\r\n", url, params, httpCookies, body);
@@ -362,36 +396,7 @@ public class BiliClient {
         // 直接返回结果
         return (T) result;
     }
-    
-    private static Map<String, String> getDefaultHeader() {
-        Map<String, String> header = new HashMap<>(6);
-        header.put("User-Agent", USER_AGENT);
-        header.put("Accept", "*/*");
-        header.put("Referer", "https://www.bilibili.com/");
-        header.put("Connection", "keep-alive");
-        return header;
-    }
-    
-    private static List<String> getCookies(List<HttpCookie> httpCookies) {
-        if (CollectionUtil.isNotEmpty(httpCookies)) {
-            return httpCookies.stream()
-                    .filter(cookie -> !ArrayUtil.contains(EXCLUDE_FIELDS, cookie.getName()))
-                    .map(cookie -> cookie.getName() + "=" + cookie.getValue())
-                    .collect(Collectors.toList());
-        }
-        return Collections.emptyList();
-    }
-    
-    @SneakyThrows
-    private static Object doReturn(String url, Object params, Class clazz, String response) {
-        log.debug("\r\n===>bili client start\r\n>请求接口: {}\r\n>参数: {}\r\n>返回结果: {}\r\n====end====\r\n", url, params, response);
-        BiliResult result = BiliResult.create(response);
-        if (!BiliResult.class.equals(clazz)) {
-            return result.getData(clazz);
-        }
-        return result;
-    }
-    
+
     @SneakyThrows
     private static String getCorrespondPath(String plaintext, String publicKeyStr) {
         KeyFactory keyFactory = KeyFactory.getInstance("RSA");
@@ -403,14 +408,14 @@ public class BiliClient {
         byte[] publicBytes = Base64.getDecoder().decode(publicKeyStr);
         X509EncodedKeySpec x509EncodedKeySpec = new X509EncodedKeySpec(publicBytes);
         PublicKey publicKey = keyFactory.generatePublic(x509EncodedKeySpec);
-        
+
         String algorithm = "RSA/ECB/OAEPPadding";
         Cipher cipher = Cipher.getInstance(algorithm);
         cipher.init(Cipher.ENCRYPT_MODE, publicKey);
-        
+
         // Encode the plaintext to bytes
         byte[] plaintextBytes = plaintext.getBytes(StandardCharsets.UTF_8);
-        
+
         // Add OAEP padding to the plaintext bytes
         OAEPParameterSpec oaepParams = new OAEPParameterSpec("SHA-256", "MGF1", MGF1ParameterSpec.SHA256, PSource.PSpecified.DEFAULT);
         cipher.init(Cipher.ENCRYPT_MODE, publicKey, oaepParams);
@@ -419,8 +424,8 @@ public class BiliClient {
         // Convert the encrypted bytes to a Base64-encoded string
         return new BigInteger(1, encryptedBytes).toString(16);
     }
-    
-    
+
+
     private static String getMixinKey(String imgKey, String subKey) {
         String s = imgKey + subKey;
         StringBuilder key = new StringBuilder();
@@ -428,7 +433,7 @@ public class BiliClient {
             key.append(s.charAt(BiliConst.MIXIN_KEY_ENC_TAB[i]));
         return key.toString();
     }
-    
+
     /**
      * 生成B站WBI签名参数
      *
