@@ -2,10 +2,13 @@ package com.wallnet.bilibili.client;
 
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.core.util.ZipUtil;
+import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.wallnet.bilibili.common.BiliConst;
-import com.wallnet.bilibili.handler.HandlerFactory;
+import com.wallnet.bilibili.common.enums.DanmuCmdEnums;
+import com.wallnet.bilibili.handler.OpenLiveMessageHandler;
 import com.wallnet.bilibili.response.BiUserInfo;
+import com.wallnet.bilibili.response.Danmu;
 import com.wallnet.bilibili.response.LiveDanmuInfo;
 import com.wallnet.bilibili.utils.BrotliUtils;
 import lombok.SneakyThrows;
@@ -18,6 +21,9 @@ import java.io.DataOutputStream;
 import java.net.URI;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 import static com.wallnet.bilibili.common.BiliConst.USER_AGENT;
 
@@ -31,6 +37,10 @@ public class LiveDanmuClient extends WebSocketClient {
     private final Long roomId;
     private final String token;
     private final Long uid;
+    private OpenLiveMessageHandler messageHandler;
+    private ScheduledExecutorService scheduler;
+
+    private ScheduledFuture<?> heartbeatFuture;
 
     private LiveDanmuClient(URI uri, Long roomId, String cookie, Long uid, String token) {
         super(uri);
@@ -69,12 +79,22 @@ public class LiveDanmuClient extends WebSocketClient {
 
     @Override
     public void onMessage(String message) {
-        HandlerFactory.handle(roomId, message);
+        Danmu parse = JSON.parseObject(message, Danmu.class);
+        if (parse != null && messageHandler != null) {
+            DanmuCmdEnums cmdEnum = DanmuCmdEnums.getByCode(parse.getCmd());
+            if (cmdEnum == null) {
+                log.warn("未知的cmd: {}", parse.getCmd());
+                return;
+            }
+            parse.setRaw(message);
+            cmdEnum.handle(this.messageHandler, this.roomId, parse);
+        }
     }
 
     @Override
     public void onClose(int code, String reason, boolean remote) {
         log.info("弹幕监听器已停止，房间号：{},{}", roomId, reason);
+        stopHeartBeat();
     }
 
     @Override
@@ -110,9 +130,9 @@ public class LiveDanmuClient extends WebSocketClient {
                 String content = new String(contentBytes, StandardCharsets.UTF_8);
                 if (BiliConst.WSOpt.AUTH_REPLY == opt) {
                     log.debug("房间 {} 的鉴权回复：{}", roomId, content);
-                    sendHeartBeatPack();
+                    startHeartBeat();
                 } else if (BiliConst.WSOpt.SEND_SMS_REPLY == opt) {
-                    HandlerFactory.handle(roomId, content);
+                    onMessage(content);
                 } else {
                     log.debug("未处理的操作码：{}，内容：{}", opt, content);
                 }
@@ -137,8 +157,26 @@ public class LiveDanmuClient extends WebSocketClient {
 
     @SneakyThrows
     public void sendHeartBeatPack() {
+        if (isClosed()) {
+            log.warn("WebSocket已关闭，跳过心跳");
+            return;
+        }
         send(pack("", BiliConst.WSOpt.HEARTBEAT));
         log.debug("已发送心跳包到房间：{}", this.roomId);
+    }
+
+    private void startHeartBeat() {
+        stopHeartBeat();
+        heartbeatFuture = scheduler.scheduleAtFixedRate(this::sendHeartBeatPack, 0, BiliConst.WSOpt.DEFAULT_HEARTBEAT_INTERVAL, TimeUnit.SECONDS);
+        log.info("心跳任务已启动");
+    }
+
+    private void stopHeartBeat() {
+        if (heartbeatFuture != null) {
+            heartbeatFuture.cancel(false);
+            heartbeatFuture = null;
+        }
+        log.info("心跳任务已停止");
     }
 
     @SneakyThrows
@@ -173,6 +211,8 @@ public class LiveDanmuClient extends WebSocketClient {
         private Long roomId;
         private String cookie;
         private LiveDanmuInfo liveDanmuInfo;
+        private OpenLiveMessageHandler messageHandler;
+        private ScheduledExecutorService scheduler;
 
         public Builder() {
         }
@@ -184,6 +224,16 @@ public class LiveDanmuClient extends WebSocketClient {
 
         public Builder cookie(String cookie) {
             this.cookie = cookie;
+            return this;
+        }
+
+        public Builder handler(OpenLiveMessageHandler messageHandler) {
+            this.messageHandler = messageHandler;
+            return this;
+        }
+
+        public Builder scheduler(ScheduledExecutorService scheduler) {
+            this.scheduler = scheduler;
             return this;
         }
 
@@ -205,7 +255,10 @@ public class LiveDanmuClient extends WebSocketClient {
             // 随机选择一个服务器
             int randomHostIndex = (int) (Math.random() * hostCount);
             LiveDanmuInfo.HostInfo host = liveDanmuInfo.getHostList().get(randomHostIndex);
-            return new LiveDanmuClient(URI.create(host.getWssUrl()), roomId, cookie, uid, liveDanmuInfo.getToken());
+            LiveDanmuClient liveDanmuClient = new LiveDanmuClient(URI.create(host.getWssUrl()), roomId, cookie, uid, liveDanmuInfo.getToken());
+            liveDanmuClient.messageHandler = this.messageHandler;
+            liveDanmuClient.scheduler = this.scheduler;
+            return liveDanmuClient;
         }
     }
 
