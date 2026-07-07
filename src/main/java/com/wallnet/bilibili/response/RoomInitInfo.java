@@ -89,7 +89,7 @@ public class RoomInitInfo {
         if (CollUtil.isNotEmpty(codecs)) {
             codecs.sort(Comparator.comparing(Codec::getCurrentQn));
             Codec codec = codecs.get(0);
-            List<RoomInitInfo.UrlInfo> urlInfos = codec.getUrlInfo();
+            List<UrlInfo> urlInfos = codec.getUrlInfo();
             if (urlInfos != null && !urlInfos.isEmpty()) {
                 int currentQn = codec.getCurrentQn();
                 this.getPlayurlInfo().getPlayurl().getGQnDesc()
@@ -97,7 +97,7 @@ public class RoomInitInfo {
                         .filter(i -> currentQn == i.getQn())
                         .findAny()
                         .ifPresent(qnDesc -> this.setCurrentQn(qnDesc.getDesc()));
-                RoomInitInfo.UrlInfo urlInfo = urlInfos.get(0);
+                UrlInfo urlInfo = urlInfos.get(0);
                 if (urlInfo.getHost() != null && codec.getBaseUrl() != null && urlInfo.getExtra() != null) {
                     return urlInfo.getHost() + codec.getBaseUrl() + urlInfo.getExtra();
                 }

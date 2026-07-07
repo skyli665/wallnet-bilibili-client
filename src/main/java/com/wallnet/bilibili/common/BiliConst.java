@@ -9,7 +9,7 @@ import lombok.NoArgsConstructor;
  */
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public final class BiliConst {
-    
+
     private static final String CORE_API_URL = "https://api.bilibili.com";
     private static final String LOGIN_API_URL = "https://passport.bilibili.com";
     private static final String LIVE_API_URL = "https://api.live.bilibili.com";
@@ -21,7 +21,7 @@ public final class BiliConst {
             61, 26, 17, 0, 1, 60, 51, 30, 4, 22, 25, 54, 21, 56, 59, 6, 63, 57, 62, 11,
             36, 20, 34, 44, 52
     };
-    
+
     public static final class Service {
         // 获取用户信息
         public static final String GET_USER_INFO = CORE_API_URL + "/x/space/myinfo";
@@ -52,7 +52,7 @@ public final class BiliConst {
         // 获取WBI信息
         public static final String GET_WBI_INFO = CORE_API_URL + "/x/web-interface/nav";
     }
-    
+
     public static final class Login {
         public static final String GENERATE_QR_CODE = LOGIN_API_URL + "/x/passport-login/web/qrcode/generate";
         public static final String GENERATE_QR_CODE_2 = LOGIN_API_URL + "/qrcode/getLoginUrl";
@@ -60,7 +60,7 @@ public final class BiliConst {
         public static final String GET_TOKEN_HTML = WWW_API_URL + "/correspond/1/";
         public static final String REFRESH_TOKEN = LOGIN_API_URL + "/x/passport-login/web/cookie/refresh";
     }
-    
+
     public static final class RSA {
         public static final String PUBLIC_KEY = "-----BEGIN PUBLIC KEY-----\n" +
                 "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDLgd2OAkcGVtoE3ThUREbio0Eg\n" +
@@ -69,7 +69,7 @@ public final class BiliConst {
                 "JNrRuoEUXpabUzGB8QIDAQAB\n" +
                 "-----END PUBLIC KEY-----";
     }
-    
+
     public static final class WSOpt {
         //	客户端发送的心跳包(30秒发送一次)
         public static final short HEARTBEAT = 2;
@@ -81,8 +81,10 @@ public final class BiliConst {
         public static final short AUTH = 7;
         // 服务器收到鉴权包后的回复
         public static final short AUTH_REPLY = 8;
+
+        public static final int DEFAULT_HEARTBEAT_INTERVAL = 20;
     }
-    
+
     public static final class Version {
         // Body实际发送的数据——普通JSON数据
         public static final short NORMAL = 0;
@@ -92,5 +94,12 @@ public final class BiliConst {
         // Body中是经过brotli压缩后的数据，请使用brotli解压，然后按照Proto协议去解析。
         public static final short BROTLI = 3;
     }
-    
+
+    public static final class OpenApi {
+        public static final String LIVE_OPEN_URL = "https://live-open.biliapi.com";
+        public static final String APP_START = LIVE_OPEN_URL + "/v2/app/start";
+        public static final String APP_HEARTBEAT = LIVE_OPEN_URL + "/v2/app/heartbeat";
+        public static final String APP_END = LIVE_OPEN_URL + "/v2/app/end";
+    }
+
 }

@@ -7,6 +7,8 @@ import cn.hutool.crypto.digest.DigestUtil;
 import cn.hutool.http.HttpRequest;
 import cn.hutool.http.HttpResponse;
 import cn.hutool.http.HttpUtil;
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONObject;
 import com.wallnet.bilibili.common.BiliConst;
 import com.wallnet.bilibili.request.LiveQuery;
 import com.wallnet.bilibili.request.Sender;
@@ -18,12 +20,16 @@ import org.jsoup.nodes.Document;
 import org.jsoup.select.Elements;
 
 import javax.crypto.Cipher;
+import javax.crypto.Mac;
 import javax.crypto.spec.OAEPParameterSpec;
 import javax.crypto.spec.PSource;
+import javax.crypto.spec.SecretKeySpec;
 import java.math.BigInteger;
 import java.net.HttpCookie;
 import java.nio.charset.StandardCharsets;
+import java.security.InvalidKeyException;
 import java.security.KeyFactory;
+import java.security.NoSuchAlgorithmException;
 import java.security.PublicKey;
 import java.security.spec.MGF1ParameterSpec;
 import java.security.spec.X509EncodedKeySpec;
@@ -45,7 +51,7 @@ public class BiliClient {
      * 获取登录二维码<br>
      * 对于url参数,需要手动生成一个qrcode,供手机扫码登录
      *
-     * @return {@link com.wallnet.bilibili.response.QrCode} Qrcode
+     * @return {@link QrCode} Qrcode
      */
     public static QrCode getQrCode() {
         QrCode qrCode = doGet(BiliConst.Login.GENERATE_QR_CODE, null, null, QrCode.class);
@@ -60,7 +66,7 @@ public class BiliClient {
      * 获取登录状态
      *
      * @param {@link String} qrcodeKey
-     * @return {@link com.wallnet.bilibili.response.LoginStatus}
+     * @return {@link LoginStatus}
      */
     public static LoginStatus loginStatus(String qrcodeKey) {
         Map<String, Object> query = new HashMap<>(1);
@@ -69,7 +75,7 @@ public class BiliClient {
         LoginStatus loginResponse = (LoginStatus) result.getData(LoginStatus.class);
         if (loginResponse.isSuccess()) {
             List<String> cookie = result.getCookie();
-            String join = java.lang.String.join(";", cookie);
+            String join = String.join(";", cookie);
             loginResponse.setCookies(join);
         }
         return loginResponse;
@@ -79,7 +85,7 @@ public class BiliClient {
      * 获取用户信息
      *
      * @param {@link String} cookie
-     * @return {@link com.wallnet.bilibili.response.BiUserInfo}
+     * @return {@link BiUserInfo}
      */
     public static BiUserInfo getUserInfo(String cookie) {
         Map<String, String> header = new HashMap<>(1);
@@ -92,10 +98,10 @@ public class BiliClient {
      *
      * @param {@link String} cookie
      * @param {@link String} refreshToken
-     * @return {@link com.wallnet.bilibili.response.LoginStatus}
+     * @return {@link LoginStatus}
      */
     public static LoginStatus getRefreshToken(String cookie, String refreshToken) {
-        String correspondPath = getCorrespondPath(java.lang.String.format("refresh_%d", System.currentTimeMillis())
+        String correspondPath = getCorrespondPath(String.format("refresh_%d", System.currentTimeMillis())
                 , BiliConst.RSA.PUBLIC_KEY);
 
         // 获取到的是html
@@ -126,7 +132,7 @@ public class BiliClient {
             LoginStatus loginResponse = (LoginStatus) result.getData(LoginStatus.class);
             if (result.isSuccess()) {
                 List<String> newCookie = result.getCookie();
-                String join = java.lang.String.join(";", newCookie);
+                String join = String.join(";", newCookie);
                 loginResponse.setCookies(join);
             }
             return loginResponse;
@@ -139,7 +145,7 @@ public class BiliClient {
      *
      * @param {@link String} cookie
      * @param {@link String} offset
-     * @return {@link com.wallnet.bilibili.response.Reaction}
+     * @return {@link Reaction}
      */
     public static Reaction getReactionDetail(String cookie, String offset, String id) {
         Map<String, String> header = new HashMap<>(1);
@@ -192,7 +198,7 @@ public class BiliClient {
      * 获取用户房间信息
      *
      * @param {@link Integer} uid
-     * @return {@link com.wallnet.bilibili.response.Room}
+     * @return {@link Room}
      */
     public static Room getRoom(Long uid) {
         Map<String, Object> params = new HashMap<>();
@@ -206,7 +212,7 @@ public class BiliClient {
      *
      * @param {@link String} cookie
      * @param {@link com.wallnet.bilibili.request.LiveQuery} query
-     * @return {@link com.wallnet.bilibili.response.Room}
+     * @return {@link Room}
      */
     public static Room getUserMonthVip(String cookie, LiveQuery query) {
         log.info("===>获取用户当月舰长");
@@ -235,7 +241,7 @@ public class BiliClient {
      * 获取房间初始化信息
      *
      * @param {@link Long} roomId
-     * @return {@link com.wallnet.bilibili.response.RoomInitInfo}
+     * @return {@link RoomInitInfo}
      */
     public static RoomInitInfo getRoomInitInfo(Long roomId) {
         Map<String, Object> params = new HashMap<>();
@@ -248,7 +254,7 @@ public class BiliClient {
      *
      * @param {@link Long} realRoomId
      * @param {@link String} roomTitle
-     * @return {@link com.wallnet.bilibili.response.RoomInfo}
+     * @return {@link RoomInfo}
      */
     public static RoomInfo getRoomInfo(Long realRoomId, String roomTitle) {
         Map<String, Object> params = new HashMap<>();
@@ -323,6 +329,74 @@ public class BiliClient {
         Map<String, String> header = getDefaultHeader();
         return doGet(BiliConst.Service.GET_WBI_INFO, header, null, BiliWbiInfo.class);
     }
+
+    /**
+     * 获取WebSocket连接信息
+     *
+     * @param idCode          主播身份码
+     * @param appId           应用ID
+     * @param accessKeyId     访问密钥ID
+     * @param accessKeySecret 访问密钥密码
+     */
+    public static WebSocketInfo getWebsocketInfo(String idCode, Long appId, String accessKeyId, String accessKeySecret) {
+        String params = String.format("{\"code\":\"%s\",\"app_id\":%d}", idCode, appId);
+        Map<String, String> headers = sign(params, accessKeyId, accessKeySecret);
+        HttpResponse response = HttpRequest.post(BiliConst.OpenApi.APP_START)
+                .addHeaders(headers)
+                .header("Content-Type", "application/json")
+                .header("Accept", "application/json")
+                .body(params)
+                .execute();
+
+        String body = response.body();
+        log.debug("获取WebSocket信息: {}", body);
+
+        JSONObject result = JSON.parseObject(body);
+        if (result.getIntValue("code") != 0) {
+            throw new RuntimeException("获取WebSocket信息失败: " + body);
+        }
+        JSONObject data = result.getJSONObject("data");
+        return data.toJavaObject(WebSocketInfo.class);
+    }
+
+    public static boolean openLiveHeartBeat(String gameId, String accessKeyId, String accessKeySecret) {
+        String params = String.format("{\"game_id\":\"%s\"}", gameId);
+        Map<String, String> headers = sign(params, accessKeyId, accessKeySecret);
+        HttpRequest request = HttpRequest.post(BiliConst.OpenApi.APP_HEARTBEAT)
+                .addHeaders(headers)
+                .body(params);
+        try (HttpResponse response = request.execute()) {
+            if (response.isOk()) {
+                log.debug("发送应用心跳成功");
+                return true;
+            } else {
+                log.error("发送应用心跳失败: {}", response.body());
+            }
+        } catch (Exception e) {
+            log.error("发送应用心跳异常", e);
+        }
+        return false;
+    }
+
+    public static boolean endApp(String gameId, Long appId, String accessKeyId, String accessKeySecret) {
+        String params = String.format("{\"game_id\":\"%s\",\"app_id\":%d}", gameId, appId);
+        Map<String, String> headers = sign(params, accessKeyId, accessKeySecret);
+        HttpRequest request = HttpRequest.post(BiliConst.OpenApi.APP_END)
+                .addHeaders(headers)
+                .body(params);
+        try (HttpResponse response = request.execute()) {
+            if (response.isOk()) {
+                log.info("关闭应用成功");
+                return true;
+            } else {
+                log.error("关闭应用失败: {}", response.body());
+            }
+        } catch (Exception e) {
+            log.error("关闭应用异常", e);
+        }
+        return false;
+    }
+
 
     @SneakyThrows
     private static <T> T doPostBody(String url, Map<String, String> headers, String body, Class<T> clazz) {
@@ -434,6 +508,46 @@ public class BiliClient {
         return key.toString();
     }
 
+    private static String buildSignString(Map<String, String> headers) {
+        StringBuilder sign = new StringBuilder();
+        for (Map.Entry<String, String> entry : headers.entrySet()) {
+            String key = entry.getKey();
+            if ("Authorization".equals(key)) {
+                continue;
+            }
+            sign.append(key).append(":").append(entry.getValue()).append("\n");
+        }
+        if (sign.length() > 0 && sign.charAt(sign.length() - 1) == '\n') {
+            sign.setLength(sign.length() - 1);
+        }
+        return sign.toString();
+    }
+
+    @SneakyThrows
+    private static String createSignature(Map<String, String> headers, String accessKeySecret) {
+        return hmacSHA256(accessKeySecret, buildSignString(headers));
+    }
+
+    private static String hmacSHA256(String key, String data) throws NoSuchAlgorithmException, InvalidKeyException {
+        Mac sha256_HMAC = Mac.getInstance("HmacSHA256");
+        SecretKeySpec secret_key = new SecretKeySpec(key.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
+        sha256_HMAC.init(secret_key);
+        byte[] hash = sha256_HMAC.doFinal(data.getBytes(StandardCharsets.UTF_8));
+        return bytesToHex(hash);
+    }
+
+    private static String bytesToHex(byte[] bytes) {
+        StringBuilder result = new StringBuilder();
+        for (byte b : bytes) {
+            result.append(String.format("%02x", b));
+        }
+        return result.toString();
+    }
+
+    private static String md5(byte[] bytes) {
+        return DigestUtil.md5Hex(bytes);
+    }
+
     /**
      * 生成B站WBI签名参数
      *
@@ -460,5 +574,30 @@ public class BiliClient {
             log.error("生成WBI签名失败", e);
         }
         return params;
+    }
+
+    public static Map<String, String> sign(String params, String accessKeyId, String appSecret) {
+        Map<String, String> headers = new LinkedHashMap<>();
+
+        long timestamp = System.currentTimeMillis() / 1000;
+
+        String bodyStr = params == null ? "" : params;
+        byte[] bodyBytes = bodyStr.getBytes(StandardCharsets.UTF_8);
+
+        headers.put("x-bili-accesskeyid", accessKeyId);
+        headers.put("x-bili-content-md5", md5(bodyBytes));
+        headers.put("x-bili-signature-method", "HMAC-SHA256");
+        headers.put("x-bili-signature-nonce", String.valueOf(System.nanoTime() % 1000000000));
+        headers.put("x-bili-signature-version", "1.0");
+        headers.put("x-bili-timestamp", String.valueOf(timestamp));
+
+        String signature = createSignature(headers, appSecret);
+        headers.put("Authorization", signature);
+
+//        log.debug("签名字符串: {}", buildSignString(headers));
+//        log.debug("生成的签名: {}", signature);
+//        log.debug("完整headers: {}", headers);
+
+        return headers;
     }
 }
