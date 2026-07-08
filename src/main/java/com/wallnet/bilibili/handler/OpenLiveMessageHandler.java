@@ -1,10 +1,6 @@
 package com.wallnet.bilibili.handler;
 
-import com.wallnet.bilibili.response.OpenLiveDanmakuMessage;
-import com.wallnet.bilibili.response.OpenLiveGiftMessage;
-import com.wallnet.bilibili.response.OpenLiveGuardMessage;
-import com.wallnet.bilibili.response.OpenLiveLikeMessage;
-import com.wallnet.bilibili.response.OpenLiveSuperChatMessage;
+import com.wallnet.bilibili.response.*;
 
 /**
  * 开放平台直播消息处理器接口
@@ -50,24 +46,18 @@ public interface OpenLiveMessageHandler {
     /**
      * 直播开始
      */
-    default void onLiveStart() {
+    default void onLiveStart(OpenLiveStartMessage msg) {
     }
 
     /**
      * 直播结束
      */
-    default void onLiveEnd() {
+    default void onLiveEnd(Danmu data) {
     }
 
     /**
      * 用户进入直播间
      */
-    default void onRoomEnter() {
-    }
-
-    /**
-     * 客户端断开连接
-     */
-    default void onClientStopped(Exception e) {
+    default void onRoomEnter(OpenLiveRoomEnterMessage msg) {
     }
 }

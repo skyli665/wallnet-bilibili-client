@@ -20,7 +20,7 @@ public class WebSocketInfo {
     private WsInfo wsInfo;
 
     @Data
-    public class WsInfo {
+    public static class WsInfo {
         @JSONField(name = "auth_body")
         private String authBody;
         @JSONField(name = "wss_link")
@@ -28,17 +28,17 @@ public class WebSocketInfo {
     }
 
     @Data
-    public class GameInfo {
+    public static class GameInfo {
         @JSONField(name = "game_id")
         private String gameId;
     }
 
     @Data
-    public class AnchorInfo {
+    public static class AnchorInfo {
         @JSONField(name = "open_id")
         private String openId;
         @JSONField(name = "room_id")
-        private String roomId;
+        private Long roomId;
         private String uface;
         private String uname;
         private Long uid;
@@ -62,7 +62,7 @@ public class WebSocketInfo {
         return anchorInfo.getOpenId();
     }
 
-    public String getRoomId() {
+    public Long getRoomId() {
         return anchorInfo.getRoomId();
     }
 

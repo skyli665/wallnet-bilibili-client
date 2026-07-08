@@ -20,23 +20,25 @@ public enum OpenLiveCmdEnums {
 
     LIVE_OPEN_PLATFORM_DM("LIVE_OPEN_PLATFORM_DM", "发送弹幕") {
         @Override
-        public void handle(OpenLiveMessageHandler messageHandler, Long roomId, JSONObject data) {
-            printMessage(data);
-            OpenLiveDanmakuMessage msg = data.toJavaObject(OpenLiveDanmakuMessage.class);
+        public void handle(OpenLiveMessageHandler messageHandler, Danmu data) {
+            printMessage(data.getRaw());
+            OpenLiveDanmakuMessage msg = JSONObject.parseObject(data.getRaw(), OpenLiveDanmakuMessage.class);
             log.debug("解析后的弹幕: msg={}", msg.getMsg());
             log.info("[弹幕] {}: {}", msg.getUname(), msg.getMsg());
-            msg.setRoomId(roomId);
+            msg.setRaw(data.getRaw());
+            msg.setRoomId(data.getRoomId());
             messageHandler.onDanmaku(msg);
         }
     },
     LIVE_OPEN_PLATFORM_SEND_GIFT("LIVE_OPEN_PLATFORM_SEND_GIFT", "收到礼物") {
         @Override
-        public void handle(OpenLiveMessageHandler messageHandler, Long roomId, JSONObject data) {
-            printMessage(data);
-            OpenLiveGiftMessage msg = data.toJavaObject(OpenLiveGiftMessage.class);
+        public void handle(OpenLiveMessageHandler messageHandler, Danmu data) {
+            printMessage(data.getRaw());
+            OpenLiveGiftMessage msg = JSONObject.parseObject(data.getRaw(), OpenLiveGiftMessage.class);
             log.debug("解析后的礼物: giftName={}, giftNum={}", msg.getGiftName(), msg.getGiftNum());
             log.info("[礼物] {} 赠送 {}x{}", msg.getUname(), msg.getGiftName(), msg.getGiftNum());
-            msg.setRoomId(roomId);
+            msg.setRaw(data.getRaw());
+            msg.setRoomId(data.getRoomId());
             messageHandler.onGift(msg);
         }
     },
@@ -55,9 +57,9 @@ public enum OpenLiveCmdEnums {
         }
 
         @Override
-        public void handle(OpenLiveMessageHandler messageHandler, Long roomId, JSONObject data) {
-            printMessage(data);
-            OpenLiveGuardMessage msg = data.toJavaObject(OpenLiveGuardMessage.class);
+        public void handle(OpenLiveMessageHandler messageHandler, Danmu data) {
+            printMessage(data.getRaw());
+            OpenLiveGuardMessage msg = JSONObject.parseObject(data.getRaw(), OpenLiveGuardMessage.class);
             if (msg.getUname() == null && msg.getUserInfo() != null) {
                 msg.setUname(msg.getUserInfo().getUname());
                 msg.setUface(msg.getUserInfo().getUface());
@@ -65,71 +67,86 @@ public enum OpenLiveCmdEnums {
                 msg.setGuardLevelName(getGuardLevelName(msg.getGuardLevel()));
             }
             log.info("[舰长] {} 开通了{}{}{}", msg.getUname(), msg.getGuardLevelName(), msg.getGuardNum(), msg.getGuardUnit());
-            msg.setRoomId(roomId);
+            msg.setRaw(data.getRaw());
+            msg.setRoomId(data.getRoomId());
             messageHandler.onGuard(msg);
         }
     },
     LIVE_OPEN_PLATFORM_SUPER_CHAT("LIVE_OPEN_PLATFORM_SUPER_CHAT", "醒目留言") {
         @Override
-        public void handle(OpenLiveMessageHandler messageHandler, Long roomId, JSONObject data) {
-            printMessage(data);
-            OpenLiveSuperChatMessage msg = data.toJavaObject(OpenLiveSuperChatMessage.class);
+        public void handle(OpenLiveMessageHandler messageHandler, Danmu data) {
+            printMessage(data.getRaw());
+            OpenLiveSuperChatMessage msg = JSONObject.parseObject(data.getRaw(), OpenLiveSuperChatMessage.class);
             log.info("[醒目留言] {}: {}", msg.getUname(), msg.getMessage());
-            msg.setRoomId(roomId);
+            msg.setRaw(data.getRaw());
+            msg.setRoomId(data.getRoomId());
             messageHandler.onSuperChat(msg);
         }
     },
     LIVE_OPEN_PLATFORM_SUPER_CHAT_DEL("LIVE_OPEN_PLATFORM_SUPER_CHAT_DEL", "删除醒目留言") {
         @Override
-        public void handle(OpenLiveMessageHandler messageHandler, Long roomId, JSONObject data) {
-            printMessage(data);
-            Long messageId = data.getLong("message_id");
+        public void handle(OpenLiveMessageHandler messageHandler, Danmu data) {
+            printMessage(data.getRaw());
+            Long messageId = JSONObject.parseObject(data.getRaw()).getLong("message_id");
             log.info("[删除醒目留言] messageId: {}", messageId);
             messageHandler.onSuperChatDelete(messageId);
         }
     },
     LIVE_OPEN_PLATFORM_LIKE("LIVE_OPEN_PLATFORM_LIKE", "点赞") {
         @Override
-        public void handle(OpenLiveMessageHandler messageHandler, Long roomId, JSONObject data) {
-            printMessage(data);
-            OpenLiveLikeMessage msg = data.toJavaObject(OpenLiveLikeMessage.class);
+        public void handle(OpenLiveMessageHandler messageHandler, Danmu data) {
+            printMessage(data.getRaw());
+            OpenLiveLikeMessage msg = JSONObject.parseObject(data.getRaw(), OpenLiveLikeMessage.class);
+            msg.setRaw(data.getRaw());
+            msg.setRoomId(data.getRoomId());
             log.debug("[点赞] {} 点赞了", msg.getUname());
-            msg.setRoomId(roomId);
             messageHandler.onLike(msg);
         }
     },
     LIVE_OPEN_PLATFORM_INTERACTION_END("LIVE_OPEN_PLATFORM_INTERACTION_END", "由于异常停止推送") {
         @Override
-        public void handle(OpenLiveMessageHandler messageHandler, Long roomId, JSONObject data) {
-            printMessage(data);
-            String gameId = data.getString("game_id");
+        public void handle(OpenLiveMessageHandler messageHandler, Danmu data) {
+            printMessage(data.getRaw());
+            String gameId = JSONObject.parseObject(data.getRaw()).getString("game_id");
             log.info("由于异常停止推送，一般是由于心跳过期或者主动调用END, gameId: {}", gameId);
-            messageHandler.onLiveEnd();
+            data.setGameId(gameId);
+            data.setRoomId(data.getRoomId());
+            data.setRaw(data.getRaw());
+            messageHandler.onLiveEnd(data);
         }
     },
     LIVE_OPEN_PLATFORM_LIVE_END("LIVE_OPEN_PLATFORM_LIVE_END", "直播结束") {
         @Override
-        public void handle(OpenLiveMessageHandler messageHandler, Long roomId, JSONObject data) {
-            printMessage(data);
-            String gameId = data.getString("game_id");
+        public void handle(OpenLiveMessageHandler messageHandler, Danmu data) {
+            printMessage(data.getRaw());
+            String gameId = JSONObject.parseObject(data.getRaw()).getString("game_id");
             log.info("直播结束, gameId: {}", gameId);
-            messageHandler.onLiveEnd();
+            data.setGameId(gameId);
+            data.setRoomId(data.getRoomId());
+            data.setRaw(data.getRaw());
+            messageHandler.onLiveEnd(data);
         }
     },
     LIVE_OPEN_PLATFORM_LIVE_START("LIVE_OPEN_PLATFORM_LIVE_START", "直播开始") {
         @Override
-        public void handle(OpenLiveMessageHandler messageHandler, Long roomId, JSONObject data) {
-            printMessage(data);
+        public void handle(OpenLiveMessageHandler messageHandler, Danmu data) {
+            printMessage(data.getRaw());
             log.info("直播开始");
-            messageHandler.onLiveStart();
+            OpenLiveStartMessage msg = JSONObject.parseObject(data.getRaw(), OpenLiveStartMessage.class);
+            msg.setRaw(data.getRaw());
+            msg.setRoomId(data.getRoomId());
+            messageHandler.onLiveStart(msg);
         }
     },
     LIVE_OPEN_PLATFORM_LIVE_ROOM_ENTER("LIVE_OPEN_PLATFORM_LIVE_ROOM_ENTER", "用户进入直播间") {
         @Override
-        public void handle(OpenLiveMessageHandler messageHandler, Long roomId, JSONObject data) {
-            printMessage(data);
+        public void handle(OpenLiveMessageHandler messageHandler, Danmu data) {
+            printMessage(data.getRaw());
             log.debug("用户进入直播间");
-            messageHandler.onRoomEnter();
+            OpenLiveRoomEnterMessage msg = JSONObject.parseObject(data.getRaw(), OpenLiveRoomEnterMessage.class);
+            msg.setRaw(data.getRaw());
+            msg.setRoomId(data.getRoomId());
+            messageHandler.onRoomEnter(msg);
         }
     },
     ;
@@ -140,7 +157,7 @@ public enum OpenLiveCmdEnums {
 
     public static OpenLiveCmdEnums getByCode(Object code) {
         EnumSet<OpenLiveCmdEnums> enums = EnumSet.allOf(OpenLiveCmdEnums.class);
-        return enums.stream().filter(e -> e.getCode().equals(code))
+        return enums.stream().filter(e -> e.codeEquals(code))
                 .findFirst()
                 .orElse(null);
     }
@@ -149,11 +166,10 @@ public enum OpenLiveCmdEnums {
         return this.getCode().equals(code);
     }
 
-    public void handle(OpenLiveMessageHandler messageHandler, Long roomId, JSONObject data) {
-        printMessage(data);
+    public void handle(OpenLiveMessageHandler messageHandler, Danmu data) {
     }
 
-    protected void printMessage(JSONObject data) {
-        log.debug("弹幕消息原始数据: {}", data.toJSONString());
+    protected void printMessage(String raw) {
+        log.debug("弹幕消息原始数据: {}", raw);
     }
 }

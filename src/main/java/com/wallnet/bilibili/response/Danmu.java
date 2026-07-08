@@ -31,6 +31,8 @@ public class Danmu {
 
     private Long roomId;
 
+    private String gameId;
+
     public LocalDateTime getSendTime() {
         // 时间戳转为LocalDateTime
         Instant instant = Instant.ofEpochMilli(sendTime);

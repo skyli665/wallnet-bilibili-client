@@ -5,8 +5,7 @@ import cn.hutool.core.util.ZipUtil;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.wallnet.bilibili.common.BiliConst;
-import com.wallnet.bilibili.common.enums.DanmuCmdEnums;
-import com.wallnet.bilibili.handler.OpenLiveMessageHandler;
+import com.wallnet.bilibili.handler.MessageQueueExecutor;
 import com.wallnet.bilibili.response.BiUserInfo;
 import com.wallnet.bilibili.response.Danmu;
 import com.wallnet.bilibili.response.LiveDanmuInfo;
@@ -37,7 +36,7 @@ public class LiveDanmuClient extends WebSocketClient {
     private final Long roomId;
     private final String token;
     private final Long uid;
-    private OpenLiveMessageHandler messageHandler;
+    private MessageQueueExecutor messageQueueExecutor;
     private ScheduledExecutorService scheduler;
 
     private ScheduledFuture<?> heartbeatFuture;
@@ -80,14 +79,10 @@ public class LiveDanmuClient extends WebSocketClient {
     @Override
     public void onMessage(String message) {
         Danmu parse = JSON.parseObject(message, Danmu.class);
-        if (parse != null && messageHandler != null) {
-            DanmuCmdEnums cmdEnum = DanmuCmdEnums.getByCode(parse.getCmd());
-            if (cmdEnum == null) {
-                log.warn("未知的cmd: {}", parse.getCmd());
-                return;
-            }
+        if (parse != null && messageQueueExecutor != null) {
             parse.setRaw(message);
-            cmdEnum.handle(this.messageHandler, this.roomId, parse);
+            parse.setRoomId(this.roomId);
+            messageQueueExecutor.addDanmu(parse);
         }
     }
 
@@ -211,7 +206,7 @@ public class LiveDanmuClient extends WebSocketClient {
         private Long roomId;
         private String cookie;
         private LiveDanmuInfo liveDanmuInfo;
-        private OpenLiveMessageHandler messageHandler;
+        private MessageQueueExecutor messageQueueExecutor;
         private ScheduledExecutorService scheduler;
 
         public Builder() {
@@ -227,8 +222,8 @@ public class LiveDanmuClient extends WebSocketClient {
             return this;
         }
 
-        public Builder handler(OpenLiveMessageHandler messageHandler) {
-            this.messageHandler = messageHandler;
+        public Builder messageQueueExecutor(MessageQueueExecutor messageQueueExecutor) {
+            this.messageQueueExecutor = messageQueueExecutor;
             return this;
         }
 
@@ -256,7 +251,7 @@ public class LiveDanmuClient extends WebSocketClient {
             int randomHostIndex = (int) (Math.random() * hostCount);
             LiveDanmuInfo.HostInfo host = liveDanmuInfo.getHostList().get(randomHostIndex);
             LiveDanmuClient liveDanmuClient = new LiveDanmuClient(URI.create(host.getWssUrl()), roomId, cookie, uid, liveDanmuInfo.getToken());
-            liveDanmuClient.messageHandler = this.messageHandler;
+            liveDanmuClient.messageQueueExecutor = this.messageQueueExecutor;
             liveDanmuClient.scheduler = this.scheduler;
             return liveDanmuClient;
         }
