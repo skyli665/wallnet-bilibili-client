@@ -3,6 +3,7 @@ package com.wallnet.bilibili;
 import com.wallnet.bilibili.client.LiveDanmuClient;
 import com.wallnet.bilibili.client.LiveRecorder;
 import com.wallnet.bilibili.client.OpenLiveWsClient;
+import com.wallnet.bilibili.handler.MessageQueueExecutor;
 import com.wallnet.bilibili.handler.OpenLiveMessageHandler;
 import com.wallnet.bilibili.response.*;
 import lombok.extern.slf4j.Slf4j;
@@ -73,7 +74,7 @@ public class Test {
         // 测试录播
         // testLive(30655190L);
         // 测试弹幕监听
-        testDanmu(27484357L, cookieStr);
+        testDanmu(22632424L, cookieStr);
     }
 
     /**
@@ -113,11 +114,6 @@ public class Test {
             public void onLike(OpenLiveLikeMessage message) {
                 log.info("[点赞] {} 点赞了", message.getUname());
             }
-
-            @Override
-            public void onClientStopped(Exception e) {
-                log.info("客户端已停止: {}", e.getMessage());
-            }
         };
 
         ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(3, r -> {
@@ -126,23 +122,30 @@ public class Test {
             return t;
         });
 
+        // 单例常量
+        MessageQueueExecutor INSTANCE = new MessageQueueExecutor(handler);
+
         LiveDanmuClient.Builder builder = new LiveDanmuClient.Builder();
         builder.roomId(roomId);
         builder.cookie(cookieStr);
-        builder.handler(handler);
+        builder.messageQueueExecutor(INSTANCE);
         builder.scheduler(scheduler);
         LiveDanmuClient liveDanmuClient = builder.build();
         liveDanmuClient.connectBlocking();
+        INSTANCE.start();
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             log.info("正在关闭 LiveDanmuClient...");
             scheduler.shutdownNow();
+            INSTANCE.stop();
             try {
                 if (!scheduler.awaitTermination(5, TimeUnit.SECONDS)) {
                     scheduler.shutdownNow();
+                    INSTANCE.stop();
                 }
             } catch (InterruptedException e) {
                 scheduler.shutdownNow();
+                INSTANCE.stop();
                 Thread.currentThread().interrupt();
             }
         }));
@@ -198,15 +201,21 @@ public class Test {
         String accessKeyId = "";
         String accessKeySecret = "";
 
+
         OpenLiveMessageHandler handler = new OpenLiveMessageHandler() {
             @Override
             public void onDanmaku(OpenLiveDanmakuMessage message) {
-                log.info("[弹幕] {}: {}", message.getUname(), message.getMsg());
+                Integer dmType = message.getDmType();
+                if (dmType == 1) {
+                    log.info("[表情] {}: {}", message.getUname(), message.getEmojiImgUrl());
+                } else {
+                    log.info("[弹幕] {}: {}", message.getUname(), message.getMsg());
+                }
             }
 
             @Override
             public void onGift(OpenLiveGiftMessage message) {
-                log.info("[礼物] {} 赠送 {}x{}", message.getUname(), message.getGiftName(), message.getGiftNum());
+                log.info("[礼物] {} 赠送 {}x{} ￥{}", message.getUname(), message.getGiftName(), message.getGiftNum(), message.getPrice());
             }
 
             @Override
@@ -230,9 +239,20 @@ public class Test {
             }
 
             @Override
-            public void onClientStopped(Exception e) {
-                log.info("客户端已停止: {}", e.getMessage());
+            public void onLiveEnd(Danmu data) {
+                log.info("[直播结束] roomId: {}, gameId: {}", data.getRoomId(), data.getGameId());
             }
+
+            @Override
+            public void onRoomEnter(OpenLiveRoomEnterMessage message) {
+                log.info("[用户进入直播间] {}: {}", message.getUname(), message.getOpenId());
+            }
+
+            @Override
+            public void onLiveStart(OpenLiveStartMessage message) {
+                log.info("[直播开始] roomId: {}, areaId: {}, title: {}", message.getRoomId(), message.getAreaId(), message.getTitle());
+            }
+
         };
 
         ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(3, r -> {
@@ -241,27 +261,35 @@ public class Test {
             return t;
         });
 
+        // 单例常量
+        MessageQueueExecutor INSTANCE = new MessageQueueExecutor(handler);
+
         OpenLiveWsClient client = new OpenLiveWsClient.Builder()
                 .idCode(idCode)
                 .appId(appId)
                 .key(accessKeyId)
                 .secret(accessKeySecret)
-                .messageHandler(handler)
+                .messageQueueExecutor(INSTANCE)
                 .scheduler(scheduler)
                 .build();
 
         log.info("LiveWsClient 已启动，房间ID: {}, 房间主UID: {}", client.getRoomId(), client.getRoomOwnerUid());
 
+        INSTANCE.start();
+
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             log.info("正在关闭 LiveWsClient...");
             client.stop();
             scheduler.shutdownNow();
+            INSTANCE.stop();
             try {
                 if (!scheduler.awaitTermination(5, TimeUnit.SECONDS)) {
                     scheduler.shutdownNow();
+                    INSTANCE.stop();
                 }
             } catch (InterruptedException e) {
                 scheduler.shutdownNow();
+                INSTANCE.stop();
                 Thread.currentThread().interrupt();
             }
         }));

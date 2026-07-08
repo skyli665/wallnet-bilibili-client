@@ -4,8 +4,8 @@ import cn.hutool.core.util.StrUtil;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.wallnet.bilibili.common.BiliConst;
-import com.wallnet.bilibili.common.enums.OpenLiveCmdEnums;
-import com.wallnet.bilibili.handler.OpenLiveMessageHandler;
+import com.wallnet.bilibili.handler.MessageQueueExecutor;
+import com.wallnet.bilibili.response.Danmu;
 import com.wallnet.bilibili.response.WebSocketInfo;
 import lombok.Getter;
 import lombok.SneakyThrows;
@@ -41,13 +41,11 @@ public class OpenLiveWsClient extends WebSocketClient {
     private final String secret;
     private List<String> wssLinks;
     private String gameId;
-
     @Getter
     private Long roomOwnerUid;
-
     @Getter
     private Long roomId;
-    private OpenLiveMessageHandler messageHandler;
+    private MessageQueueExecutor messageQueueExecutor;
     private ScheduledExecutorService scheduler;
 
     private final AtomicBoolean isRunning = new AtomicBoolean(false);
@@ -86,7 +84,31 @@ public class OpenLiveWsClient extends WebSocketClient {
 
     @Override
     public void onMessage(String message) {
-        log.debug("收到文本消息: {}", message);
+        try {
+            JSONObject json = JSON.parseObject(message);
+            String cmd = json.getString("cmd");
+            if (cmd == null) {
+                return;
+            }
+            int colonIndex = cmd.indexOf(':');
+            if (colonIndex != -1) {
+                cmd = cmd.substring(0, colonIndex);
+            }
+            String data = json.getString("data");
+            if (data == null) {
+                return;
+            }
+            if (messageQueueExecutor == null) {
+                return;
+            }
+            Danmu danmu = new Danmu();
+            danmu.setCmd(cmd);
+            danmu.setRaw(data);
+            danmu.setRoomId(roomId);
+            messageQueueExecutor.addDanmu(danmu);
+        } catch (Exception e) {
+            log.error("解析消息失败: {}", message, e);
+        }
     }
 
     @Override
@@ -94,11 +116,6 @@ public class OpenLiveWsClient extends WebSocketClient {
         log.info("WebSocket连接已关闭，原因：{}，code：{}", reason, code);
         isRunning.set(false);
         stopHeartBeat();
-
-        if (messageHandler != null) {
-            messageHandler.onClientStopped(new Exception("WebSocket closed: " + reason + ", code: " + code));
-        }
-
         handleReconnect();
     }
 
@@ -144,13 +161,6 @@ public class OpenLiveWsClient extends WebSocketClient {
         if (respBody.getIntValue("code") == 0) {
             log.info("鉴权成功");
             startHeartBeat();
-
-            JSONObject data = respBody.getJSONObject("data");
-            if (data != null) {
-                this.roomOwnerUid = data.getLong("uid");
-                this.roomId = data.getLong("room_id");
-                log.info("房间信息 - roomId: {}, ownerUid: {}", roomId, roomOwnerUid);
-            }
         } else {
             log.error("鉴权失败: {}", content);
             close();
@@ -159,37 +169,7 @@ public class OpenLiveWsClient extends WebSocketClient {
 
     private void handleSmsReply(byte[] contentBytes) {
         String content = new String(contentBytes, StandardCharsets.UTF_8);
-        processMessage(content);
-    }
-
-    private void processMessage(String message) {
-        log.debug("收到消息: {}", message);
-        try {
-            JSONObject json = JSON.parseObject(message);
-            String cmd = json.getString("cmd");
-            if (cmd == null) {
-                return;
-            }
-            int colonIndex = cmd.indexOf(':');
-            if (colonIndex != -1) {
-                cmd = cmd.substring(0, colonIndex);
-            }
-            JSONObject data = json.getJSONObject("data");
-            if (data == null) {
-                return;
-            }
-            if (messageHandler == null) {
-                return;
-            }
-            OpenLiveCmdEnums cmdEnum = OpenLiveCmdEnums.getByCode(cmd);
-            if (cmdEnum == null) {
-                log.warn("未知的cmd: {}", cmd);
-                return;
-            }
-            cmdEnum.handle(messageHandler, roomId, data);
-        } catch (Exception e) {
-            log.error("解析消息失败: {}", message, e);
-        }
+        onMessage(content);
     }
 
     private void handleHeartbeatReply(byte[] contentBytes) {
@@ -297,7 +277,7 @@ public class OpenLiveWsClient extends WebSocketClient {
 
                     URI uri = URI.create(wssUrl);
                     OpenLiveWsClient newClient = new OpenLiveWsClient(uri, idCode, appId, key, secret, wssLinks);
-                    newClient.messageHandler = this.messageHandler;
+                    newClient.messageQueueExecutor = this.messageQueueExecutor;
                     newClient.gameId = this.gameId;
 
                     if (newClient.connectBlocking()) {
@@ -329,7 +309,7 @@ public class OpenLiveWsClient extends WebSocketClient {
         private Long appId;
         private String key;
         private String secret;
-        private OpenLiveMessageHandler messageHandler;
+        private MessageQueueExecutor messageQueueExecutor;
         private ScheduledExecutorService scheduler;
 
         public Builder idCode(String idCode) {
@@ -352,8 +332,8 @@ public class OpenLiveWsClient extends WebSocketClient {
             return this;
         }
 
-        public Builder messageHandler(OpenLiveMessageHandler handler) {
-            this.messageHandler = handler;
+        public Builder messageQueueExecutor(MessageQueueExecutor messageQueueExecutor) {
+            this.messageQueueExecutor = messageQueueExecutor;
             return this;
         }
 
@@ -368,7 +348,9 @@ public class OpenLiveWsClient extends WebSocketClient {
             URI uri = URI.create(wssLinks.get(0));
             OpenLiveWsClient client = new OpenLiveWsClient(uri, idCode, appId, key, secret, wssLinks);
             client.gameId = info.getGameId();
-            client.messageHandler = this.messageHandler;
+            client.roomId = info.getRoomId();
+            client.roomOwnerUid = info.getUid();
+            client.messageQueueExecutor = this.messageQueueExecutor;
             client.connectBlocking();
             client.sendAuth(info.getAuthBody());
             client.scheduler = this.scheduler;

@@ -20,14 +20,15 @@ public enum DanmuCmdEnums {
 
     TALK_MSG("DANMU_MSG", "弹幕消息") {
         @Override
-        public void handle(OpenLiveMessageHandler handler, Long roomId, Danmu message) {
+        public void handle(OpenLiveMessageHandler handler, Danmu message) {
             JSONObject json = JSON.parseObject(message.getRaw());
             JSONArray info = json.getJSONArray("info");
             OpenLiveDanmakuMessage m = new OpenLiveDanmakuMessage();
             m.setDmType(info.getJSONArray(0).getInteger(1));
             m.setUid(info.getJSONArray(2).getLong(0));
             m.setUname(info.getJSONArray(2).getString(1));
-            m.setRoomId(roomId);
+            m.setRoomId(message.getRoomId());
+            m.setRaw(message.getRaw());
             m.setMsg(info.getString(1));
             m.setTimestamp(info.getJSONArray(0).getLong(4));
             m.setSendTime(info.getJSONArray(0).getLong(4));
@@ -39,7 +40,7 @@ public enum DanmuCmdEnums {
     NOTICE_MSG("NOTICE_MSG", "系统消息"),
     SUPER_CHAT_MESSAGE("SUPER_CHAT_MESSAGE", "醒目留言") {
         @Override
-        public void handle(OpenLiveMessageHandler handler, Long roomId, Danmu message) {
+        public void handle(OpenLiveMessageHandler handler, Danmu message) {
 
             // 直接解析json字符串
             JSONObject json = JSON.parseObject(message.getRaw());
@@ -48,8 +49,11 @@ public enum DanmuCmdEnums {
 
             // 构建sc消息
             OpenLiveSuperChatMessage sc = new OpenLiveSuperChatMessage();
-            sc.setRoomId(roomId);
-            sc.setMessageId(json.getLong("msg_id"));
+            sc.setRoomId(message.getRoomId());
+            sc.setRaw(message.getRaw());
+            String msgIdStr = json.getString("msg_id");
+            String msgId = msgIdStr.split(":")[0];
+            sc.setMessageId(Long.parseLong(msgId));
             sc.setUid(data.getLong("uid"));
             sc.setUname(userInfo.getString("uname"));
             sc.setUface(userInfo.getString("face"));
@@ -64,7 +68,7 @@ public enum DanmuCmdEnums {
     },
     SEND_GIFT("SEND_GIFT", "礼物") {
         @Override
-        public void handle(OpenLiveMessageHandler handler, Long roomId, Danmu message) {
+        public void handle(OpenLiveMessageHandler handler, Danmu message) {
             // 直接解析json字符串
             JSONObject json = JSON.parseObject(message.getRaw());
             JSONObject data = json.getJSONObject("data");
@@ -73,22 +77,26 @@ public enum DanmuCmdEnums {
             JSONObject giftInfo = data.getJSONObject("gift_info");
             // 构建sc消息
             OpenLiveGiftMessage gift = new OpenLiveGiftMessage();
-            gift.setRoomId(roomId);
+            gift.setRoomId(message.getRoomId());
+            gift.setRaw(message.getRaw());
             gift.setUid(senderInfo.getLong("uid"));
             gift.setUname(sendBase.getString("name"));
             gift.setGiftId(data.getInteger("giftId"));
+            gift.setGiftName(giftInfo.getString("giftName"));
+            gift.setGiftNum(giftInfo.getInteger("num"));
+            gift.setPrice(giftInfo.getInteger("price"));
             boolean hasImagedGift = giftInfo.getBooleanValue("has_imaged_gift");
             if (hasImagedGift) {
                 gift.setGiftIcon(giftInfo.getString("gif"));
             } else {
-                gift.setGiftIcon(giftInfo.getString("webp"));
+                gift.setGiftIcon(giftInfo.getString("img_basic"));
             }
             handler.onGift(gift);
         }
     },
     USER_TOAST_MSG_V2("USER_TOAST_MSG_V2", "用户上舰") {
         @Override
-        public void handle(OpenLiveMessageHandler handler, Long roomId, Danmu message) {
+        public void handle(OpenLiveMessageHandler handler, Danmu message) {
             JSONObject json = JSON.parseObject(message.getRaw());
             JSONObject data = json.getJSONObject("data");
             JSONObject userInfo = data.getJSONObject("sender_uinfo");
@@ -106,7 +114,8 @@ public enum DanmuCmdEnums {
             Long endTime = guardInfo.getLong("end_time");
             msg.setGuardNum(getGuardNum(startTime, endTime));
             msg.setGuardUnit("月");
-            msg.setRoomId(roomId);
+            msg.setRaw(message.getRaw());
+            msg.setRoomId(message.getRoomId());
             handler.onGuard(msg);
         }
 
@@ -136,6 +145,6 @@ public enum DanmuCmdEnums {
                 .orElse(null);
     }
 
-    public void handle(OpenLiveMessageHandler handler, Long roomId, Danmu message) {
+    public void handle(OpenLiveMessageHandler handler, Danmu message) {
     }
 }
